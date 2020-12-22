@@ -12,6 +12,9 @@ On October 21, 2019, the 43rd Canadian election was held to elect the House of C
 
 There are two datasets used in the Logistic regression and post stratified model. The Canadian Election Survey(CES) analyzes the gender, province, education level, and the vote choice of each observation. And the Post-stratification data separate the population into cells based on age group, sex, education level of all observations in 2016. By assuming the population in 2019 is the same as the population in the post-stratification data, I can apply the Logistic Regression and Post-stratification to make the prediction. The Logistic regression helps decide the snow the likelihood of voting intention related to the age group, sex, and education level. Then apply the voting probability concluded by the Logistic regression onto each cell in post-stratification data provided by Stat Canada in 2016.
 
+# Abstract
+In this study, I will estimate how the result will be different if the voter turnout as a percentage of the total population becomes 100%, which means every citizen participated in the election. I am going to create a logistic regression model with the sample data with predictors age, sex, education and province, then I will conduct a post-stratification analysis on census data to estimate the proportion of voting for Liberal Party. Besides, I will also come up with the seats of House of Commons won by both Liberal Party and Conservative Party.
+
 # KEYWORDS
 Canadian election 2019, Logistic Regression, Post-stratification, Liberal Party, Conservative Party
 
