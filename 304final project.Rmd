@@ -1,0 +1,191 @@
+---
+title: "Prediction of 2019 Canadian federal election if everyone votes"
+author: "Yanyi Wang 1004901341"
+date: "22/12/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Introduction
+On October 21, 2019, the 43rd Canadian election was held to elect the House of Commons members. The Liberal Party led by Justin Trudeau won 157 seats, it was remarkable that this governing Party formed a government while receiving less than 35% of the national popular vote. Another competitive party in this election is the Conservative Party, which won 121 seats and became the official opposition. In this election, the voter turnout as the percentage of electors was 66%, and the voter turnout as a percentage of the total population was only 47.3%. In this study, I will estimate how the result will be different if the voter turnout as a percentage of the total population becomes 100%, which means every citizen participated in the election. I am analyzing the result using the Logistic regression with post stratified model based on the Canadian Election Survey(CES) and census data provided by Stat Canada in 2016 (the census in Canada was held every five years, and 2016 is the nearest census year to 2019). Assume that there is no change in the population between 2016 and 2019.
+
+There are two datasets used in the Logistic regression and post stratified model. The Canadian Election Survey(CES) analyzes the gender, province, education level, and the vote choice of each observation. And the Post-stratification data separate the population into cells based on age group, sex, education level of all observations in 2016. By assuming the population in 2019 is the same as the population in the post-stratification data, I can apply the Logistic Regression and Post-stratification to make the prediction. The Logistic regression helps decide the snow the likelihood of voting intention related to the age group, sex, and education level. Then apply the voting probability concluded by the Logistic regression onto each cell in post-stratification data provided by Stat Canada in 2016.
+
+# KEYWORDS
+Canadian election 2019, Logistic Regression, Post-stratification, Liberal Party, Conservative Party
+
+# Data
+```{r,echo=FALSE,results='hide'}
+library(cesR)
+library(labelled)
+library(tidyverse)
+library(tidyverse)
+
+get_ces("ces2019_web")
+ces2019_web<-to_factor(ces2019_web)
+head(ces2019_web)
+```
+
+
+```{r,echo=FALSE,results='hide'}
+library(dplyr)
+ces_2019new <- ces2019_web %>% select(cps19_age, cps19_gender,cps19_province,cps19_education,cps19_votechoice)
+ces_2019new = ces_2019new[complete.cases(ces_2019new), ]
+ces_2019_two <- dplyr::filter(ces_2019new, grepl('Liberal Party|Conservative Party', cps19_votechoice))
+sample_data <- dplyr::filter(ces_2019_two, !grepl("Don't know/ Prefer not to answer", cps19_education))
+```
+
+
+```{r,echo=FALSE,results='hide'}
+stat_2016 <- read.csv("census.csv")
+str(stat_2016)
+count_edu <- c("No.certificate..diploma.or.degree..2016.counts.","Secondary..high..school.diploma.or.equivalency.certificate..2016.counts.","Apprenticeship.or.trades.certificate.or.diploma..2016.counts.","College..CEGEP.or.other.non.university.certificate.or.diploma..2016.counts.","University.certificate.or.diploma.below.bachelor.level..2016.counts.","University.certificate..diploma.or.degree.at.bachelor.level.or.above....distribution.2016.")
+censusdata <- stat_2016 %>% select(c("Geographic.name","Age","Sex",count_edu)) %>% pivot_longer(cols=count_edu,names_to='Education',values_to="tol_c")
+censusdata <- dplyr::filter(censusdata, !grepl("Both sexes", Sex))
+censusdata <- dplyr::filter(censusdata, !grepl("All ages, 15-plus|25 to 64", Age))
+censusdata <- dplyr::filter(censusdata, !grepl("Apprenticeship.or.trades.certificate.or.diploma..2016.counts.", Education))
+censusdata <- dplyr::filter(censusdata, !grepl("Canada", Geographic.name))
+```
+
+```{r,echo=FALSE,results='hide'}
+library(haven)
+sample_data <- sample_data %>% 
+  mutate(Age = case_when(cps19_age >25  & cps19_age <= 34 ~ '25 to 34',
+                         cps19_age >35  & cps19_age <= 44 ~ '35 to 44',
+                         cps19_age >45  & cps19_age <= 54 ~ '45 to 54',
+                         cps19_age >55  & cps19_age <= 64 ~ '55 to 64'
+  )) 
+unique(sample_data$Age)
+
+sample_data <- sample_data %>% 
+  mutate(Sex = case_when(cps19_gender == "A woman" ~ 'Female',
+                         cps19_gender == "A man"~ 'Male'
+  )) 
+
+sample_data <- sample_data %>% rename(Geographic.name = cps19_province)
+
+Nocertification<-c("No schooling","Some elementary school","Completed elementary school")
+Secondary_high<-c("Some secondary/ high school","Completed secondary/ high school")
+nonuniversity<-c("Some technical, community college, CEGEP, College Classique","Completed technical, community college, CEGEP, College Classique")
+belowbachelor<-c("Some university")
+abovebachelor<-c("Bachelor's degree"," Master's degree","Professional degree or doctorate")
+sample_data<-sample_data %>% 
+  mutate(Education = case_when(cps19_education =="No schooling" ~ 'No.certificate..diploma.or.degree..2016.counts.',
+                               cps19_education =="Some elementary school" ~ 'No.certificate..diploma.or.degree..2016.counts.',
+                               cps19_education =="Completed elementary school" ~ 'No.certificate..diploma.or.degree..2016.counts.',
+                               cps19_education =="Some secondary/ high school" ~ 'Secondary..high..school.diploma.or.equivalency.certificate..2016.counts.',
+                               cps19_education =="Completed secondary/ high school" ~ 'Secondary..high..school.diploma.or.equivalency.certificate..2016.counts.',
+                               cps19_education =="Some technical, community college, CEGEP, College Classique" ~ 'College..CEGEP.or.other.non.university.certificate.or.diploma..2016.counts.',
+                               cps19_education =="Completed technical, community college, CEGEP, College Classique" ~ 'College..CEGEP.or.other.non.university.certificate.or.diploma..2016.counts.',
+                               cps19_education =="Some university" ~ 'University.certificate.or.diploma.below.bachelor.level..2016.counts.',
+                               cps19_education =="Bachelor's degree" ~ 'University.certificate..diploma.or.degree.at.bachelor.level.or.above....distribution.2016.',
+                               cps19_education =="Master's degree" ~ 'University.certificate..diploma.or.degree.at.bachelor.level.or.above....distribution.2016.',
+                               cps19_education =="Professional degree or doctorate" ~ 'University.certificate..diploma.or.degree.at.bachelor.level.or.above....distribution.2016.')) 
+
+
+```
+
+```{r,echo=FALSE,results='hide'}
+sample_data = sample_data[complete.cases(sample_data), ]
+```
+In this study, the sample data is the Canadian Election Survey(CES), and Stat Canada provided census data in 2016. For the sample data, I first choose the variables used to build the logistic regression, including age, gender, province, education, and vote choice. To predict the voting result between the Liberal Party and Conservative, I filter the observation with vote choice Liberal Party or Conservative party. And to make the sample data cleaner, I exclude the observation with the answer "Don't know/ Prefer not to answer" to the education level and all other missing values. For the census data, I pivot the variable "education" and select the variables related to the variables chosen in the sample data, including  Geographic name, age, sex, and education. And to exclude the overlapping observations in the census data, I removed "both sex" under variable sex, and "All ages, 15-plus", "25 to 64" under variable age, and "Canada" under variable Geographic name.
+
+Then I processed to map the dataset. I analyze age groups' age groups in the sample data based on the age groups in the census data. Then, change the statement of the gender in the sample data to make it the same as in the census data. Then I change the name of the variable province in the sample data and make it the same as the variable name in the census data. Finally, I analyze the population's education level in the sample data and determine which education level in the census data best describes each observation in the census data. After this, I remove all missing values in the sample data again to exclude any meaningless observations.
+
+# Model
+
+## Logistic Model
+
+```{r,echo=FALSE,results='hide'}
+mymodel<-glm(cps19_votechoice ~ Age+Sex+Geographic.name+Education, data=sample_data, family= "binomial")
+summary(mymodel)
+```
+
+
+```{r,echo=FALSE}
+census_pre<-predict(mymodel,censusdata[,c("Age","Sex","Education","Geographic.name")],type="response")
+predictn<-ifelse(census_pre>0.5,"Liberal Party","Conservative Party")
+censuspredict<-cbind(censusdata,predictn)
+```
+
+```{r,echo=FALSE}
+censuspredict$Conservative<-ifelse(censuspredict$predictn=="Conservative Party",censuspredict$tol_c,0)
+censuspredict$Liberal<-ifelse(censuspredict$predictn=="Liberal Party",censuspredict$tol_c,0)
+```
+
+## States electoral Seats
+```{r,echo=FALSE}
+statespre <- censuspredict %>% group_by(Geographic.name) %>% summarise(Liberal=sum(Liberal),Conservative=sum(Conservative))
+statespre$winner<-ifelse(statespre$Liberal>statespre$Conservative, "Conservative Party","Liberal Party")
+```
+```{r,echo=FALSE}
+statespre<-statespre %>% 
+  mutate(electoral_seats = case_when(Geographic.name=="Alberta"~34,
+  Geographic.name=="British Columbia"~42,Geographic.name=="Manitoba"~14,Geographic.name=="New Brunswick"~10,Geographic.name=="Newfoundland and Labrador"~7,Geographic.name=="Northwest Territories"~1,Geographic.name=="Nova Scotia"~11, Geographic.name=="Nunavut"~1,Geographic.name=="Ontario"~121,Geographic.name=="Prince Edward Island"~4,Geographic.name=="Quebec"~78,Geographic.name=="Saskatchewan"~14,
+  Geographic.name=="Yukon"~1)) 
+statespre
+```
+
+## Y^ps
+```{r,echo=FALSE}
+sum(census_pre*censusdata$tol_c)/sum(censusdata$tol_c)
+```
+
+## voting results
+```{r,echo=FALSE}
+predict_result <- statespre %>% group_by(winner) %>% summarise(total_votes=sum(electoral_seats))
+predict_result
+```
+
+# Results
+This study is interested in predict the result of the 2019 Canadian election with all population votes by a multilevel regression model with post-stratification. There are two dataset used in this study, which are Canadian Election Survey(CES) and Stat Canada 2016 Education Census. MPR model is an effective statistical method to predict population by sample data. In this study, Canadian Election survey is the sample data, this dataset contains three demographic data (gender, province and education), and the voting intention. And Stat Canada 2016 Education Census is the census data in the model, which contains also the demographic data. 
+
+This logistic regression model is used to model the probability of response variable voting intention existing by explanatory variables including age, sex, province and education in the sample data. This is trying to predict the probability of voters voting for the liberal party in the Canadian Election.
+The logistic regression model in R can be illustrate by the following formula:
+\
+$\textbf{log}(\frac{\hat{\textbf{LiberalParty}}}{1-\hat{\textbf{LiberalyParty}}})$ = 1.2361 - 0.1620$\textbf{Age35to44}$ + ... +0.1318$\textbf{Age55to64}$ - 0.1318$\textbf{SexMale}$ - 1.3552$\textbf{Geographic.nameBritish Columbia}$ + ... - 1.2000$\textbf{Geographic.nameYukon}$ -0.2201$\textbf{EducationNo.certificate..diploma.or.degree..2016.counts}$ + ... -0.3685$\textbf{EducationUniversity.certificate.or.diploma.below.bachelor.level..2016.counts.}$
+
+
+In this formula, $\hat{\textbf{LiberalParty}}$ is the expected proportion of vote for the Liberal Party in the election. When all other predictors stays 0, the log-odds is 1.2361, $\textbf{log}(\frac{\hat{\textbf{LiberalParty}}}{1-\hat{\textbf{LiberalParty}}})$ is the log-odds, and then we can calculate the probability of voting for Liberal Party by log-odds. There are some dummy variables, for example Sex, where female is the baseline. This means when other predictors are unchanged and the sex of the voter changed from female to male, the log-odds will decrease by 0.1318. Similarly, each single variable can be interpreted as when other predictors are unchanged, if one of the variable changes from 0 to 1, it means the voter changes from the baseline to the corresponding variable with corresponding coefficients, and we expect the log-odds changes by that coefficient. It is remarkable that most of the variables are significant predictors in this model, only four predictors have p-values higher than the significant level.
+
+In this study, the census data contains counts of each group of person, so the post-stratification model helps to predict the votes for Liberal Party and Conservative Party. As post-stratification is based on the sum of all the cells by weighting all the cell-level by the proportion of the total count in the whole population. And sampling weights sum to the population sizes within each post-stratum. The census data divided all populations into 520 cells by Geographic name, age, sex and education, and then I apply the logistic regression model from the sample data on this census data to predict the probability of the vote of each cell in the census data. And then I sum the total count for each population in each cell, and then weight each proportion estimate by the corresponding total count.
+
+If denoted as $\hat{Y}^{PS}$, which can be shown in formula: $\hat{Y}^{PS} = \frac{\sum_{j}N_j\hat{y_j}}{\sum_{j}N_j}$, where $N_j$ is the population for each group of population, and $\hat{y_j}$ is the estimated weight of the voting population in that group. Then prediction of the voting probability for Liberal Party is $\hat{Y}^{PS} = 0.5377$, which means the predict voting proportion of the Liberal Party is going to be 53.77%. Which means the Liberal Party wins more proportion of votes.
+
+Another method also used here for predicting the electoral result. Based on the Canadian electoral policy, House of Commons has 388 seats in total, different province has different seats based on the population and other factors. The party wins more seats will be the winner of the election. Then here I predict the seats won by Liberal Party and Conservative party. The perfection result shows the Liberal Party wins 111 seats while Conservative wins 227 seats of House of Commons.
+
+## AUC
+```{r,echo=FALSE}
+library(pROC)
+probability<-predict(mymodel,type=c('response'))
+resultmod<-ifelse(probability>=0.5,"Liberal Party","Conservative Party")
+sample_result<-cbind(sample_data,resultmod)
+roc <- roc(sample_result$cps19_votechoice, probability)
+auc(roc)
+plot(roc, auc.polygon=TRUE, print.auc = TRUE,asp = NA)
+```
+
+We can see from the plot that the area under the curve is 0.690, which means the probability of the model predict the true result is 69%. So the logistic regression with the post-stratification model is a reasonable prediction of the election result, it can also be improved to be more precise.
+
+# Discussion
+
+## Summary
+This study predicts the 2019 Canadian Election result if everyone votes using the logistic regression with post-stratification. The logistic regression expresses the relationship between the response variable and the explanatory variables. It suggests how voting intention changes as age, gender, education, province changes. Then conduct this logistic regression with the post-stratification model on the census data to predict the voting proportion, and the value Y^ps indicates that the voting proportion of the Liberal Party will be 53.77%. And then, based on the unique electoral system in Canada, I predict the seats won by the liberal party and conservative party, the result shows Liberal Party wins 111 seats while the Conservative wins 227 seats of House of Commons.
+
+## Conclusion
+The two different results mentioned above show that although the Liberal Party gets more vote intention from the population, the Conservative Party wins more House of Commons seats because of the different provinces' different seats. Based on my prediction, if everyone in the census data votes in the 2019 Canadian election, the result will differ from the real world result in 2019. The prediction suggests the Conservative Party wins more seats than the Liberal Party. This shows even a party wins more support from the population, they can lose the election because the seats of House of Commons in some province is much more than others.
+And the result of this study suggests a different result of the election compared to the real result in 2019, this study suggests that the election result will be different if everyone votes in the election. But it is not possible to ask everyone in the country to vote, and there are always a group of people not willing to vote or don't care if they vote.
+
+## Weaknesses
+There are still many limitations to this prediction. The first is that I only include the Liberal Party and the Conservative party in this study. There are also other competitive parties in the Canadian election, for example, the New Democrat. I only include the Liberal Party and Conservative Party's voting intention in my logistic regression, and I assume everyone will choose to vote for the Liberal Party or Conservative Party, which is not valid in reality. The second limitation is that I did not include the population whose age is between 19 and 25. As the raw census data does not classify the age range from 19 to 25, but only all ages above age 15. I believe it is not reasonable to include populations too young to vote, and the age range 'above 15' also overlaps with other age range. So I exclude those population ages between 19 and 25 in my census data, this can lead to inaccuracy of the prediction because there are a large proportion of voters in this age range according to the sample data. Moreover, the census data was collected in 2016, this prediction is based on the assumption that there was no change in the population between 2016 and 2019, but which can be different from the real situation. Additionally, there are many missing values in the raw sample data, I delete all the observation with missing values in the raw sample data, but some information of those observations can be influential to the prediction of the voting intention.
+
+## Next step
+In this study, some improvements can be made to make the prediction more reliable. Firstly, many other factors can influence the voting intention of the citizens, for example, the household income, religion, and so on. More explanatory variables can be included in the logistic regression using to predict the voting intention can make the model more accurate. At the same time, 2020 new census data can be more accurate using to reflect the situation in 2019, and the age group can be more precise, adding the age group between 19 and 25, and age group above 64 will help to make the census data more complete and make the prediction more reliable.
+ 
+## Reference
+Stephenson, Laura B; Harell, Allison; Rubenson, Daniel; Loewen, Peter John, 2020, “2019 Canadian Election Study - Online Survey”, https://doi.org/10.7910/DVN/DUS88V, Harvard Dataverse, V1
+
+Party Standings in the House of Commons. (n.d.). Retrieved December 22, 2020, from https://www.ourcommons.ca/Members/en/party-standings
+
+Government of Canada, S. (2017, November 27). Education Highlight Tables, 2016 Census. Retrieved December 22, 2020, from https://www12.statcan.gc.ca/census-recensement/2016/dp-pd/hlt-fst/edu-sco/index-eng.cfm
